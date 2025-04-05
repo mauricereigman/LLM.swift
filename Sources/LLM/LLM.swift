@@ -323,6 +323,11 @@ open class LLM: ObservableObject {
         return output
     }
     
+    public func getCompletionStream(from input: borrowing String) -> AsyncStream<String> {
+        guard isAvailable else { fatalError("LLM is being used") }
+        return getResponse(from: input)
+    }
+
     @InferenceActor
     public func respond(to input: String, with makeOutputFrom: @escaping (AsyncStream<String>) async -> String) async {
         guard isAvailable else { return }
@@ -591,6 +596,7 @@ public enum Quantization: String {
     case Q5_K_S
     case Q5_K_M
     case Q6_K
+    case Q6_K_L
     case Q8_0
 }
 

@@ -198,22 +198,24 @@ public actor LLMCore {
     
     func stopGeneration() {
         shouldContinuePredicting = false
+        print("Stopped generation shouldContinuePredicting = \(shouldContinuePredicting)")
     }
     
-    func generateResponseStream(from input: String) -> AsyncStream<String> {
-        return AsyncStream<String> { continuation in
-            Task {
-                guard prepareContext(for: input) else { return continuation.finish() }
-                while shouldContinuePredicting && currentTokenCount < Int32(maxTokenCount) {
-                    let token = predictNextToken()
-                    guard token != endToken else { return continuation.finish() }
-                    let word = decode(token)
-                    continuation.yield(word)
-                }
-                continuation.finish()
-            }
-        }
-    }
+    public func generateResponseStream(from input: String) -> AsyncStream<String> {
+       return AsyncStream<String> { continuation in
+           Task {
+               guard prepareContext(for: input) else { return continuation.finish() }
+               while shouldContinuePredicting && currentTokenCount < Int32(maxTokenCount) {
+                   await Task.yield() // yield to let stopGeneration run
+                   let token = predictNextToken()
+                   if token == endToken { break }
+                   let word = decode(token)
+                   continuation.yield(word)
+               }
+               continuation.finish()
+           }
+       }
+   }
 }
 
 public enum LLMError: Error {
@@ -443,6 +445,15 @@ open class LLM: ObservableObject {
         return output
     }
     
+    public func getCompletionStream(from input: borrowing String) async -> AsyncStream<String> {
+        isAvailable = false
+        defer { isAvailable = true }
+        
+        let response = await core.generateResponseStream(from: input)
+        
+        return response
+    }
+
     public func respond(to input: String, with makeOutputFrom: @escaping (AsyncStream<String>) async -> String) async {
         guard isAvailable else { return }
         
@@ -615,6 +626,7 @@ public enum Quantization: String {
     case Q5_K_S
     case Q5_K_M
     case Q6_K
+    case Q6_K_L
     case Q8_0
 }
 

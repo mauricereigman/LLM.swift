@@ -175,14 +175,15 @@ public actor LLMCore {
         
         tokenBuffer.append(token)
         
-        if let stopTokens = stopSequenceTokens, stopTokens.count <= tokenBuffer.count {
-            let startIdx = tokenBuffer.count - stopTokens.count
-            let bufferSlice = tokenBuffer[startIdx..<tokenBuffer.count]
-            if Array(bufferSlice) == stopTokens {
-                shouldContinuePredicting = false
-                return endToken
-            }
-        }
+//        if let stopTokens = stopSequenceTokens, stopTokens.count <= tokenBuffer.count {
+//            let startIdx = tokenBuffer.count - stopTokens.count
+//            let bufferSlice = tokenBuffer[startIdx..<tokenBuffer.count]
+//            if Array(bufferSlice) == stopTokens {
+//                print("Reached stop sequence tokens")
+//                shouldContinuePredicting = false
+//                return endToken
+//            }
+//        }
         
         clearBatch()
         addToBatch(token: token, pos: currentTokenCount)
@@ -210,6 +211,11 @@ public actor LLMCore {
                    let token = predictNextToken()
                    if token == endToken { break }
                    let word = decode(token)
+                   if (stopSequenceTokens != nil && word.contains(decode(stopSequenceTokens![0]))) {
+                       print("found stoptoken")
+                       stopGeneration()
+                       continuation.finish()
+                   }
                    continuation.yield(word)
                }
                continuation.finish()

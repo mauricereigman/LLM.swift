@@ -614,6 +614,7 @@ public enum Quantization: String {
     case IQ2_M
     case Q2_K_S
     case Q2_K
+    case Q2_K_L
     case IQ3_XXS
     case IQ3_XS
     case IQ3_S
@@ -728,7 +729,8 @@ extension URL {
             task.resume()
         }
         _ = observation
-        try FileManager.default.moveItem(at: url, to: destination)
+        let data = try Data(contentsOf: url)
+        try data.write(to: destination)
     }
 }
 

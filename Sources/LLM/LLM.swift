@@ -680,20 +680,34 @@ public struct HuggingFaceModel {
     }
     
     public func download(to directory: URL = .documentsDirectory, as name: String? = nil, _ updateProgress: @Sendable @escaping (Double) -> Void) async throws -> URL {
-        var destination: URL
-        if let name {
-            destination = directory.appending(path: name)
-            guard !destination.exists else { updateProgress(1); return destination }
+        if let cached = cachedModelURL(in: directory, preferredName: name) {
+            updateProgress(1)
+            return cached
         }
         guard let downloadURL = try await getDownloadURL() else { throw HuggingFaceError.noFilteredURL }
-        destination = directory.appending(path: downloadURL.lastPathComponent)
-        guard !destination.exists else { return destination }
+        let destination = directory.appending(path: name ?? downloadURL.lastPathComponent)
+        if destination.exists {
+            updateProgress(1)
+            return destination
+        }
         try await downloadURL.downloadData(to: destination, updateProgress)
         return destination
     }
     
-    public static func tinyLLaMA(_ quantization: Quantization = .Q4_K_M, _ systemPrompt: String) -> HuggingFaceModel {
-        HuggingFaceModel("TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF", quantization, template: .chatML(systemPrompt))
+    private func cachedModelURL(in directory: URL, preferredName: String?) -> URL? {
+        if let preferredName {
+            let candidate = directory.appending(path: preferredName)
+            return candidate.exists ? candidate : nil
+        }
+        guard let files = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) else {
+            return nil
+        }
+        for file in files where file.pathExtension.lowercased() == "gguf" {
+            if (try? filterRegexPattern.hasMatch(in: file.lastPathComponent)) == true {
+                return file
+            }
+        }
+        return nil
     }
 }
 

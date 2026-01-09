@@ -702,8 +702,17 @@ public struct HuggingFaceModel {
         guard let files = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) else {
             return nil
         }
+        // Extract model identifier from name (e.g., "TheBloke/Llama-2-7B-GGUF" -> "Llama-2-7B")
+        let modelIdentifier = name.split(separator: "/").last?
+            .replacingOccurrences(of: "-GGUF", with: "", options: .caseInsensitive)
+            .replacingOccurrences(of: "-gguf", with: "", options: .caseInsensitive) ?? ""
+        
         for file in files where file.pathExtension.lowercased() == "gguf" {
-            if (try? filterRegexPattern.hasMatch(in: file.lastPathComponent)) == true {
+            let filename = file.lastPathComponent
+            // Check both: filename matches the quantization pattern AND contains the model identifier
+            let matchesQuantization = (try? filterRegexPattern.hasMatch(in: filename)) == true
+            let matchesModel = modelIdentifier.isEmpty || filename.localizedCaseInsensitiveContains(modelIdentifier)
+            if matchesQuantization && matchesModel {
                 return file
             }
         }

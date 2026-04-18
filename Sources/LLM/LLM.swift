@@ -23,7 +23,7 @@ public actor LLMCore {
     private let totalTokenCount: Int
     private lazy var newlineToken: Token = llama_vocab_nl(vocab)
     private lazy var endToken: Token = llama_vocab_eos(vocab)
-    private lazy var nullToken: Token = encode("\0", shouldAddBOS: false).first!
+    private lazy var nullToken: Token? = encode("\0", shouldAddBOS: false).first
     
     private var stopSequenceTokens: [Token]?
     private var tokenBuffer: [Token] = []
@@ -63,6 +63,7 @@ public actor LLMCore {
         contextParams.n_batch = contextParams.n_ctx
         contextParams.n_threads = processorCount
         contextParams.n_threads_batch = processorCount
+        contextParams.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_ENABLED
         self.params = contextParams
         
         guard let context = llama_init_from_model(model, params) else {
@@ -124,7 +125,7 @@ public actor LLMCore {
         tokenBuffer.removeAll()
         
         var tokens = encode(input)
-        if tokens.last == nullToken { tokens.removeLast() }
+        if let nullToken, tokens.last == nullToken { tokens.removeLast() }
         
         let initialCount = tokens.count
         guard maxTokenCount > initialCount else { return false }
@@ -234,6 +235,11 @@ public enum LLMError: Error {
 }
 
 open class LLM: ObservableObject {
+    private static let backendInitialized: Bool = {
+        llama_backend_init()
+        return true
+    }()
+
     private(set) var model: Model
     public var history: [Chat]
     public var preprocess: @Sendable (_ input: String, _ history: [Chat]) -> String = { input, _ in return input }
@@ -306,6 +312,7 @@ open class LLM: ObservableObject {
         self.history = history
         
         var modelParams = llama_model_default_params()
+        _ = Self.backendInitialized
 #if targetEnvironment(simulator)
         modelParams.n_gpu_layers = 0
 #endif
@@ -661,13 +668,18 @@ public struct HuggingFaceModel {
     }
     
     package func getDownloadURLStrings() async throws -> [String] {
-        let url = URL(string: "https://huggingface.co/\(name)/tree/main")!
+        let url = URL(string: "https://huggingface.co/api/models/\(name)")!
         let data = try await url.getData()
-        let content = String(data: data, encoding: .utf8)!
-        let downloadURLPattern = #"(?<=href=").*\.gguf\?download=true"#
-        let matches = try! downloadURLPattern.matches(in: content)
-        let root = "https://huggingface.co"
-        return matches.map { match in root + match }
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let siblings = json["siblings"] as? [[String: Any]] else {
+            return []
+        }
+        let root = "https://huggingface.co/\(name)/resolve/main/"
+        return siblings.compactMap { sibling in
+            guard let rfilename = sibling["rfilename"] as? String,
+                  rfilename.hasSuffix(".gguf") else { return nil }
+            return root + rfilename
+        }
     }
 
     package func getDownloadURL() async throws -> URL? {
